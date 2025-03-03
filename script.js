@@ -168,7 +168,7 @@ function saveSettings() {
 function getCurrentSentences() {
     return currentSentenceBank === 'custom' && customSentences.length > 0 
         ? customSentences 
-        : defaultSentences;
+        : sentences;  
 }
 
 function startGame() {
