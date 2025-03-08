@@ -6,6 +6,7 @@ let customSentences = [];
 let currentSentenceBank = "default";
 let gameStarted = false;
 let gameComplete = false;
+let ttsSetting = false; 
 
 const sentences = [  
     "Why do you want to study at our university?",  
@@ -118,6 +119,7 @@ function loadSettings() {
     try {
         const savedBank = localStorage.getItem('sentenceBank');
         const savedSentences = localStorage.getItem('customSentences');
+        const savedTTSSetting = localStorage.getItem('ttsSetting');
         
         if (savedBank) {
             currentSentenceBank = savedBank;
@@ -127,11 +129,17 @@ function loadSettings() {
         if (savedSentences) {
             customSentences = JSON.parse(savedSentences);
         }
+        
+        if (savedTTSSetting !== null) {
+            ttsSetting = savedTTSSetting === 'true';
+            updateTTSToggleButton();
+        }
     } catch (error) {
         console.error('Error loading settings:', error);
         // Reset to defaults if there's an error
         currentSentenceBank = "default";
         customSentences = [];
+        ttsSetting = false;
     }
 }
 
@@ -165,6 +173,45 @@ function saveSettings() {
     }
 }
 
+function toggleTTS() {
+    ttsSetting = !ttsSetting;
+    localStorage.setItem('ttsSetting', ttsSetting);
+    updateTTSToggleButton();
+}
+
+function updateTTSToggleButton() {
+    const ttsButton = document.getElementById('ttsToggle');
+    if (ttsSetting) {
+        ttsButton.textContent = "Voice: ON";
+        ttsButton.classList.add('active');
+    } else {
+        ttsButton.textContent = "Voice: OFF";
+        ttsButton.classList.remove('active');
+    }
+}
+
+// TTS function to speak text
+function speakText(text) {
+    // Cancel any ongoing speech
+    if (window.speechSynthesis.speaking) {
+        window.speechSynthesis.cancel();
+    }
+    
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.9; // Slightly slower rate for clarity
+    utterance.pitch = 1;
+    utterance.volume = 1;
+    utterance.lang = 'en-US';
+    
+    window.speechSynthesis.speak(utterance);
+}
+
+// Speak word function - depends on ttsSetting
+function speakWord(text) {
+    if (!ttsSetting) return;
+    speakText(text);
+}
+
 function getCurrentSentences() {
     return currentSentenceBank === 'custom' && customSentences.length > 0 
         ? customSentences 
@@ -186,6 +233,14 @@ function startGame() {
 
 function newSentence() {
     if (gameComplete) return;
+    
+    // Show check and skip buttons for the new sentence
+    document.getElementById('checkButton').style.display = 'inline';
+    document.getElementById('skipButton').style.display = 'inline';
+    
+    // Hide next sentence and speak sentence buttons
+    document.getElementById('nextSentenceButton').style.display = 'none';
+    document.getElementById('speakSentenceButton').style.display = 'none';
     
     const sentences = getCurrentSentences();
     const randomIndex = Math.floor(Math.random() * sentences.length);
@@ -225,22 +280,27 @@ function checkAnswer() {
         
         document.getElementById('feedback').textContent = '✨ Correct! ✨';
         
+        // Hide check and skip buttons
+        document.getElementById('checkButton').style.display = 'none';
+        document.getElementById('skipButton').style.display = 'none';
+        
+        // Show the next sentence and speak sentence buttons
+        document.getElementById('nextSentenceButton').style.display = 'inline';
+        document.getElementById('speakSentenceButton').style.display = 'inline';
+        
+        // Mark game as complete but don't show victory modal yet if score is 5
         if (score >= 5) {
             gameComplete = true;
-            document.getElementById('checkButton').style.display = 'none';
-            document.getElementById('skipButton').style.display = 'none';
-            showVictoryModal(); // Show the victory modal
-        } else {
-            // Only continue if game isn't complete
-            setTimeout(() => {
-                if (!gameComplete) {
-                    newSentence();
-                }
-            }, 1500);
+            // We've removed the showVictoryModal() call from here
         }
     } else {
         document.getElementById('feedback').textContent = '❌ Try again! ❌';
     }
+}
+
+function speakSentence() {
+    // Always speak the sentence regardless of ttsSetting
+    speakText(currentSentence);
 }
 
 async function showVictoryModal() {
@@ -272,9 +332,12 @@ function resetGame() {
     document.getElementById('startButton').style.display = 'inline';
     document.getElementById('checkButton').style.display = 'none';
     document.getElementById('skipButton').style.display = 'none';
+    document.getElementById('nextSentenceButton').style.display = 'none';
+    document.getElementById('speakSentenceButton').style.display = 'none';
     document.getElementById('feedback').textContent = '';
     document.getElementById('scrambledWords').innerHTML = '';
     document.getElementById('answerArea').innerHTML = '';
+    document.getElementById('settingsButton').style.display = 'inline';
 }
 
 function handleWordSelection(event) {
@@ -287,6 +350,11 @@ function handleWordSelection(event) {
     const targetArea = sourceArea === 'scrambledWords' ? 'answerArea' : 'scrambledWords';
     
     document.getElementById(targetArea).appendChild(clickedElement);
+    
+    // If moving from scrambled words to answer area, speak the word (controlled by ttsSetting)
+    if (sourceArea === 'scrambledWords') {
+        speakWord(clickedElement.textContent);
+    }
 }
 
 // Initialize
@@ -297,6 +365,18 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('startButton').addEventListener('click', startGame);
     document.getElementById('checkButton').addEventListener('click', checkAnswer);
     document.getElementById('skipButton').addEventListener('click', newSentence);
+    
+    // Modified the nextSentenceButton event listener to check if victory modal should be shown
+    document.getElementById('nextSentenceButton').addEventListener('click', () => {
+        if (gameComplete) {
+            showVictoryModal(); // Show victory modal when clicking "Next Sentence" after completing 5 sentences
+        } else {
+            newSentence();
+        }
+    });
+    
+    document.getElementById('speakSentenceButton').addEventListener('click', speakSentence);
+    document.getElementById('ttsToggle').addEventListener('click', toggleTTS);
     document.getElementById('scrambledWords').addEventListener('click', handleWordSelection);
     document.getElementById('answerArea').addEventListener('click', handleWordSelection);
     
@@ -326,4 +406,14 @@ document.addEventListener('DOMContentLoaded', () => {
             modal.style.display = 'none';
         }
     });
+    
+    // Initialize TTS button state
+    updateTTSToggleButton();
+    
+    // Check if browser supports speech synthesis
+    if (!window.speechSynthesis) {
+        document.getElementById('ttsToggle').style.display = 'none';
+        document.getElementById('speakSentenceButton').style.display = 'none';
+        console.error('Browser does not support speech synthesis');
+    }
 });
